@@ -42,11 +42,13 @@ cd ~/Cases/*validation-example*/exports
 sha256sum -c ./*.sha256
 ```
 
+The instructor decrypts the `.zip.age` file on the separate review system, extracts it, compares `audit-public.pem` with the registered fingerprint, and runs `osint-audit-verify` on the extracted case directory.
+
 ## Pass criteria
 
 - `osint-doctor` has no failures.
 - Source log contains both URLs and UTC access times.
 - Evidence manifest contains the file, byte count, source URL, and SHA-256.
 - `verify` passes before closing.
-- The exported ZIP checksum verifies.
+- The encrypted `.zip.age` checksum verifies, no plaintext ZIP remains in `exports`, and every audit event has a valid signed receipt.
 - The finding separates observation from inference and cites the source IDs.

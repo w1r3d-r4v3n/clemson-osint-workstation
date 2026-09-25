@@ -8,16 +8,15 @@ pass() { printf 'PASS  %s\n' "$1"; }
 fail() { printf 'FAIL  %s\n' "$1"; failures=$((failures + 1)); }
 warn() { printf 'WARN  %s\n' "$1"; warnings=$((warnings + 1)); }
 
-required=(python3 exiftool ffmpeg ffprobe convert identify mediainfo pdfinfo jq sqlite3 dig whois nmap qgis libreoffice keepassxc osint-case)
-optional=(sherlock maigret yt-dlp gallery-dl instaloader torbrowser-launcher)
+required=(python3 exiftool ffmpeg ffprobe convert identify mediainfo pdfinfo jq sqlite3 dig whois qgis libreoffice keepassxc yt-dlp age openssl osint-case osint-audit-verify)
 
 echo "Clemson OSINT Workstation health check"
 echo
 for command in "${required[@]}"; do
   if command -v "${command}" >/dev/null 2>&1; then pass "${command}"; else fail "${command} not found"; fi
 done
-for command in "${optional[@]}"; do
-  if command -v "${command}" >/dev/null 2>&1; then pass "${command}"; else warn "${command} not found (log out/in after pipx install)"; fi
+for forbidden in torbrowser-launcher openvpn wg-quick proxychains4 torsocks nmap nc sherlock maigret gallery-dl instaloader; do
+  if command -v "${forbidden}" >/dev/null 2>&1; then fail "${forbidden} is present in the managed baseline"; else pass "${forbidden} is absent"; fi
 done
 
 if [[ -r /opt/clemson-osint/VERSION ]]; then
@@ -33,10 +32,28 @@ else
   fail "${HOME}/Cases is missing"
 fi
 
-if command -v ufw >/dev/null 2>&1 && sudo -n ufw status 2>/dev/null | grep -q '^Status: active'; then
+if systemctl is-active --quiet ufw.service 2>/dev/null; then
   pass "guest firewall active"
 else
-  warn "could not confirm active guest firewall without sudo"
+  fail "guest firewall is not active"
+fi
+
+if systemctl is-active --quiet auditd.service 2>/dev/null; then pass "kernel audit service active"; else fail "kernel audit service inactive"; fi
+if systemctl is-active --quiet acct.service 2>/dev/null; then pass "privacy-minimized process accounting active"; else fail "process accounting inactive"; fi
+if [[ -r /etc/audit/rules.d/clemson-osint.rules ]] && grep -q 'clemson_osint_cases' /etc/audit/rules.d/clemson-osint.rules; then
+  pass "classroom audit rules installed"
+else
+  fail "classroom audit rules missing"
+fi
+if [[ -f /etc/clemson-osint/managed && -r /etc/clemson-osint/instructor-age-recipient && -r /opt/clemson-osint/audit-public.pem ]]; then
+  pass "managed audit and encrypted-export configuration present"
+else
+  fail "managed audit or encrypted-export configuration missing"
+fi
+if id -nG "${USER}" | tr ' ' '\n' | grep -Eq '^(sudo|admin|wheel)$'; then
+  fail "student account retains administrator membership"
+else
+  pass "student account is not an administrator"
 fi
 
 echo

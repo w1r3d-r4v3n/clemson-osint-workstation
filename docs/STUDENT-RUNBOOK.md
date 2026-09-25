@@ -4,6 +4,8 @@
 
 Use the least intrusive method that can answer the question. Public availability does not make every collection or publication ethical. Your instructor's scope and Clemson policies control the exercise.
 
+Use only the assigned managed VM and student account. Do not add Tor, a VPN, a proxy, private-browsing software, browser extensions, alternate DNS, or administrator access. The audit scope is disclosed in `docs/AUDIT-AND-GOVERNANCE.md`.
+
 ## 1. Frame the question
 
 Write one falsifiable question, the authority for the exercise, what is in and out of scope, and when you will stop. Do not begin with a conclusion you intend to prove.
@@ -37,7 +39,7 @@ osint-case source CASE_ID "https://example.org/page" \
   --notes "Why this may answer the question"
 ```
 
-Treat username tools, search snippets, AI summaries, aggregators, and people-search sites as leads. Do not report them as identity proof.
+Treat username-search sites, snippets, AI summaries, aggregators, and people-search sites as leads. Do not automate bulk profile collection or report a match as identity proof.
 
 ## 4. Verify the claim
 
@@ -63,7 +65,7 @@ osint-case ingest CASE_ID ~/Downloads/report.pdf \
 osint-case verify CASE_ID
 ```
 
-The ingest command copies the file into the case and records its SHA-256, size, UTC ingest time, source URL, and note. It does not prove the source is truthful; it lets another analyst verify that the file did not change after ingest.
+The ingest command copies the file into the case and records its SHA-256, size, UTC ingest time, source URL, and note. Each case action also extends a hash chain and obtains a signed workstation receipt. These controls do not prove a source is truthful; they make later alteration detectable.
 
 Do not upload sensitive files to online metadata, OCR, translation, or malware-analysis sites without instructor approval. The workstation includes local equivalents for common tasks.
 
@@ -112,7 +114,11 @@ osint-case verify CASE_ID
 osint-case close CASE_ID
 ```
 
-Submit the ZIP and its `.sha256` file from the case `exports` folder. Keep the original case private until the retention date set by the instructor.
+Submit the `.zip.age` file and its `.sha256` file from the case `exports` folder through the instructor-approved channel. The package is encrypted to the instructor's public age recipient; you do not receive or need the private key. Keep the original case private until the stated retention date.
+
+If closing reports that the audit anchor or encryption recipient is unavailable, stop and contact the instructor. Do not create an unencrypted substitute or send the case through email, public links, personal cloud storage, or chat.
+
+After a transient anchor error, retry the current head once with `osint-case anchor CASE_ID`. If that fails, stop; do not edit the audit log or receipts.
 
 ## Stop and ask the instructor when
 

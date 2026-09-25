@@ -10,8 +10,10 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import stat
+import subprocess
 import sys
 import uuid
 import zipfile
@@ -21,6 +23,9 @@ from urllib.parse import urlparse
 
 
 ROOT = Path(os.environ.get("OSINT_CASES_DIR", Path.home() / "Cases")).expanduser()
+MANAGED_MARKER = Path(os.environ.get("OSINT_MANAGED_MARKER", "/etc/clemson-osint/managed"))
+ANCHOR_HELPER = Path(os.environ.get("OSINT_AUDIT_ANCHOR", "/usr/local/libexec/clemson-osint/osint-audit-anchor"))
+AGE_RECIPIENT_FILE = Path(os.environ.get("OSINT_AGE_RECIPIENT_FILE", "/etc/clemson-osint/instructor-age-recipient"))
 SOURCE_FIELDS = ["source_id", "accessed_utc", "url", "title", "category", "notes"]
 EVIDENCE_FIELDS = [
     "evidence_id",
@@ -48,6 +53,70 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def canonical(value: object) -> bytes:
+    return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def audit_records(case: Path) -> list[dict[str, object]]:
+    path = case / "audit.jsonl"
+    if not path.exists():
+        return []
+    records: list[dict[str, object]] = []
+    previous = "0" * 64
+    with path.open(encoding="utf-8") as handle:
+        for expected, line in enumerate(handle, start=1):
+            record = json.loads(line)
+            claimed = str(record.pop("event_hash", ""))
+            if record.get("seq") != expected or record.get("previous_hash") != previous:
+                raise ValueError(f"audit sequence is invalid at event {expected}")
+            actual = hashlib.sha256(canonical(record)).hexdigest()
+            if claimed != actual:
+                raise ValueError(f"audit hash is invalid at event {expected}")
+            record["event_hash"] = claimed
+            records.append(record)
+            previous = claimed
+    return records
+
+
+def anchor_case(case: Path) -> None:
+    required = MANAGED_MARKER.exists() or os.environ.get("OSINT_AUDIT_REQUIRED") == "1"
+    if not required:
+        return
+    if not ANCHOR_HELPER.is_file():
+        raise ValueError(f"managed audit anchor is missing: {ANCHOR_HELPER}")
+    try:
+        subprocess.run(["sudo", "-n", str(ANCHOR_HELPER), str(case)], check=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise ValueError("the root-owned audit receipt could not be created; contact the instructor") from exc
+
+
+def append_audit(case: Path, action: str, details: dict[str, object] | None = None) -> None:
+    records = audit_records(case)
+    if records and (MANAGED_MARKER.exists() or os.environ.get("OSINT_AUDIT_REQUIRED") == "1"):
+        expected_receipt = case / "receipts" / f"{len(records):06d}.receipt.json"
+        if not expected_receipt.is_file():
+            anchor_case(case)
+    previous = str(records[-1]["event_hash"]) if records else "0" * 64
+    record: dict[str, object] = {
+        "schema_version": 1,
+        "seq": len(records) + 1,
+        "recorded_utc": utc_now(),
+        "actor": getpass.getuser(),
+        "case_id": read_metadata(case)["case_id"],
+        "action": action,
+        "details": details or {},
+        "previous_hash": previous,
+    }
+    record["event_hash"] = hashlib.sha256(canonical(record)).hexdigest()
+    path = case / "audit.jsonl"
+    with path.open("ab") as handle:
+        handle.write(canonical(record))
+        handle.flush()
+        os.fsync(handle.fileno())
+    path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    anchor_case(case)
 
 
 def safe_url(value: str) -> str:
@@ -98,7 +167,7 @@ def cmd_new(args: argparse.Namespace) -> None:
     date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     case = ROOT / f"{date}_{slugify(args.title)}_{case_id[:8]}"
     case.mkdir(mode=0o700)
-    for name in ("evidence", "captures", "notes", "reports", "exports"):
+    for name in ("evidence", "captures", "notes", "reports", "receipts", "exports"):
         (case / name).mkdir(mode=0o700)
     metadata = {
         "schema_version": 1,
@@ -126,6 +195,7 @@ def cmd_new(args: argparse.Namespace) -> None:
         "[Record disconfirming evidence, uncertainty, and next steps.]\n",
         encoding="utf-8",
     )
+    append_audit(case, "case-created", {"status": "open"})
     print(f"Created case {case_id}")
     print(case)
 
@@ -163,6 +233,7 @@ def cmd_source(args: argparse.Namespace) -> None:
             "notes": args.notes or "",
         },
     )
+    append_audit(case, "source-logged", {"source_id": source_id, "hostname": urlparse(url).hostname or ""})
     print(f"Logged source {source_id}")
 
 
@@ -196,6 +267,17 @@ def ingest_one(case: Path, source: Path, source_url: str, notes: str) -> None:
             "bytes": destination.stat().st_size,
             "source_url": source_url,
             "notes": notes,
+        },
+    )
+    append_audit(
+        case,
+        "evidence-ingested",
+        {
+            "evidence_id": evidence_id,
+            "relative_path": destination.relative_to(case).as_posix(),
+            "sha256": digest,
+            "bytes": destination.stat().st_size,
+            "source_hostname": urlparse(source_url).hostname or "" if source_url else "",
         },
     )
     print(f"{evidence_id[:8]}  {digest}  {destination.name}")
@@ -242,7 +324,17 @@ def cmd_verify(args: argparse.Namespace) -> None:
         print("No evidence files are registered.")
     if failures:
         raise SystemExit(f"Verification failed for {failures} item(s).")
+    append_audit(case, "evidence-verified", {"items": len(rows), "result": "passed"})
     print(f"Verification passed: {len(rows)} item(s).")
+
+
+def cmd_anchor(args: argparse.Namespace) -> None:
+    case = resolve_case(args.case)
+    records = audit_records(case)
+    if not records:
+        raise ValueError("audit log is empty")
+    anchor_case(case)
+    print(f"Audit head anchored: {records[-1]['event_hash']}")
 
 
 def cmd_close(args: argparse.Namespace) -> None:
@@ -252,20 +344,42 @@ def cmd_close(args: argparse.Namespace) -> None:
     metadata["status"] = "closed"
     metadata["closed_utc"] = utc_now()
     (case / "case.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
-    export = case / "exports" / f"{case.name}.zip"
+    append_audit(case, "case-closed", {"status": "closed"})
+    recipient = AGE_RECIPIENT_FILE.read_text(encoding="utf-8").strip() if AGE_RECIPIENT_FILE.is_file() else ""
+    if not recipient.startswith("age1"):
+        raise ValueError("a valid instructor age recipient is not configured")
+    age_command = ["age"]
+    if not MANAGED_MARKER.exists() and os.environ.get("OSINT_AGE_COMMAND"):
+        age_command = shlex.split(os.environ["OSINT_AGE_COMMAND"])
+    if not age_command or shutil.which(age_command[0]) is None:
+        raise ValueError("age is required to create an encrypted export")
+    plain_export = case / "exports" / f".{case.name}.zip"
+    export = case / "exports" / f"{case.name}.zip.age"
     if export.exists() and not args.force:
         raise ValueError(f"export already exists; use --force to replace it: {export}")
     if export.exists():
         export.unlink()
-    with zipfile.ZipFile(export, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-        for path in sorted(case.rglob("*")):
-            if not path.is_file() or "exports" in path.relative_to(case).parts:
-                continue
-            archive.write(path, path.relative_to(case.parent))
+    if plain_export.exists():
+        plain_export.unlink()
+    try:
+        with zipfile.ZipFile(plain_export, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+            for path in sorted(case.rglob("*")):
+                if not path.is_file() or "exports" in path.relative_to(case).parts:
+                    continue
+                archive.write(path, path.relative_to(case.parent))
+        subprocess.run(
+            [*age_command, "--encrypt", "--recipient", recipient, "--output", str(export), str(plain_export)],
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise ValueError("encrypted case export failed") from exc
+    finally:
+        if plain_export.exists():
+            plain_export.unlink()
     checksum = sha256(export)
     checksum_path = export.with_suffix(export.suffix + ".sha256")
     checksum_path.write_text(f"{checksum}  {export.name}\n", encoding="utf-8")
-    print(f"Closed and packaged: {export}")
+    print(f"Closed and encrypted for the instructor: {export}")
     print(f"SHA-256: {checksum}")
 
 
@@ -300,6 +414,10 @@ def build_parser() -> argparse.ArgumentParser:
     verify = sub.add_parser("verify", help="verify registered evidence hashes")
     verify.add_argument("case")
     verify.set_defaults(func=cmd_verify)
+
+    anchor = sub.add_parser("anchor", help="retry the root-owned receipt for the current audit head")
+    anchor.add_argument("case")
+    anchor.set_defaults(func=cmd_anchor)
 
     close = sub.add_parser("close", help="verify, close, and package a case")
     close.add_argument("case")

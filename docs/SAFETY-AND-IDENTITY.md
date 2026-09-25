@@ -5,14 +5,13 @@
 Do not collapse these into the word "privacy."
 
 1. **Endpoint isolation** limits what risky content can do to the student's Windows computer. A dedicated VM, disposable snapshots, disabled host integration, and local analysis help.
-2. **Traffic privacy** concerns what websites, network operators, and observers can see about the connection. VirtualBox NAT still presents the host network's public IP. Tor Browser can change the route for activity inside Tor Browser, but it has limitations and can be blocked.
-3. **Identity protection** concerns account logins, cookies, writing style, disclosed facts, timing, phone numbers, recovery email, payment details, and other identifiers. Neither a VM nor Tor automatically solves this.
+2. **Network attribution** concerns what websites, network operators, and authorized institutional reviewers can see about the connection. VirtualBox NAT still presents the host network's public IP. This baseline intentionally includes no Tor, VPN, or configurable proxy path.
+3. **Identity protection** concerns account logins, cookies, writing style, disclosed facts, timing, phone numbers, recovery email, payment details, and other identifiers. A VM does not solve these problems.
 
 ## Classroom profiles
 
-- **Ordinary research profile:** default for benign public records and course exercises. Use the VM, no personal browser sync, no saved passwords, and no personal/Clemson account login unless the instructor explicitly requires it.
-- **Separated passive profile:** only when the instructor has approved the purpose. Start from a clean snapshot, use Tor Browser for passive public browsing, do not install extensions, do not resize or customize the browser, do not download and open files outside the VM, and never log into identifying accounts.
-- **Authenticated research:** use only an account you are authorized to use, under the site's terms and the exercise scope. Authentication makes the activity attributable to that account. Do not route it through Tor merely to appear anonymous.
+- **Ordinary research profile:** the default for public records and course exercises. Use the managed VM, no browser sync, no saved passwords, and no personal/Clemson account login unless the instructor explicitly requires it.
+- **Authenticated research:** use only an account you are authorized to use, under the site's terms and exercise scope. Authentication makes activity attributable to that account. Never try to hide that attribution with a proxy or relay.
 
 This kit does not create personas or accounts. Any undercover or deceptive interaction needs institutional authorization, training, and a separate plan.
 
@@ -43,6 +42,10 @@ Use `windows/Test-OSINTVM.ps1` on the Windows host to audit these settings. The 
 
 Collect the minimum data necessary for the question. Avoid home addresses, family members, minors, health information, intimate imagery, credentials, and precise live location unless the exercise has a documented and lawful need. Apply redactions to reports, not originals. Never use OSINT findings to harass, intimidate, discriminate, or facilitate unwanted contact.
 
-## Tor limitations
+## No anonymity layer
 
-Tor Browser is useful for traffic separation, not magic anonymity. Downloads opened in other applications may connect outside Tor. Account login identifies the account. Browser modifications can increase fingerprint uniqueness. Timing, behavior, and disclosed facts can still correlate activity. Follow the Tor Project's current user guidance and your instructor's policy.
+The student baseline intentionally omits Tor Browser, VPN clients, proxy configuration, browser private mode, browser extensions, and encrypted-DNS bypass. Attempting to add or use an anonymity layer violates the managed-classroom model. A separately authorized research activity requiring identity protection needs a different institutionally approved environment, legal and ethics review, trained operators, and its own oversight plan.
+
+## Transparent audit boundary
+
+The workstation records executed program names through process accounting, case changes, signed case receipts, execution of the case tool and browser, and kernel-observed writes to the case directory. It does not record command-line arguments, passwords, cookies, form contents, keystrokes, private messages, or the contents of evidence. See `docs/AUDIT-AND-GOVERNANCE.md` for access, review, retention, and verification requirements.

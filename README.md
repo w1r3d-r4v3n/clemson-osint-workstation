@@ -10,25 +10,30 @@ This kit is for lawful research of public information. It is not a license to by
 
 - A local research portal organized from question framing through reporting.
 - One command to create, log, preserve, verify, and package a case.
-- Firefox, Tor Browser Launcher, ExifTool, FFmpeg, ImageMagick, MediaInfo, SQLite, DNS/WHOIS tools, QGIS, LibreOffice, KeePassXC, and supporting utilities.
-- Isolated Python applications installed with `pipx`: Sherlock, Maigret, yt-dlp, gallery-dl, and Instaloader.
+- Firefox, ExifTool, FFmpeg, ImageMagick, MediaInfo, SQLite, DNS/WHOIS tools, QGIS, LibreOffice, KeePassXC, yt-dlp, and supporting Ubuntu packages.
 - A host-side VirtualBox builder with NAT, no shared clipboard, no drag-and-drop, no shared folders, and no exposed host ports.
-- A health check and a small automated test suite.
+- Root-protected audit receipts, encrypted instructor exports, a health check, and an automated test suite.
 
 No paid API keys or accounts are required for the core workflow. Some linked public services apply rate limits or offer optional accounts.
 
-## Clone and install
+## Managed classroom installation
 
-Students can clone the public repository directly:
+The default build separates the instructor administrator from the student account. On a fresh Ubuntu VM, the instructor creates both accounts, keeps the administrator credential private, and gives the student account no `sudo` membership:
 
 ```bash
 git clone https://github.com/w1r3d-r4v3n/clemson-osint-workstation.git
 cd clemson-osint-workstation
 chmod +x install.sh bin/* tests/*
-sudo ./install.sh
+sudo adduser osint-student
+sudo deluser osint-student sudo 2>/dev/null || true
+
+# Generate and retain this private key on the instructor's separate system:
+age-keygen -o instructor-age-key.txt
+# Copy only the printed age1... public recipient into the command below:
+sudo ./install.sh --student-user osint-student --age-recipient 'age1...'
 ```
 
-Do not use a `curl | sudo bash` shortcut. Cloning first lets students inspect the installer, retain the documentation, and identify the exact commit used for a class.
+Do not put `instructor-age-key.txt` in the VM or repository. Register the VM's `/opt/clemson-osint/audit-public.pem`, install manifest, and assigned student before issuing the VM. Do not use a `curl | sudo bash` shortcut.
 
 ## Fast path from Windows
 
@@ -47,19 +52,18 @@ The script creates and starts a VM named `Clemson-OSINT`. Complete Ubuntu's norm
 
 Recommended host minimum: 16 GB RAM, 4 free CPU threads, and 80 GB free storage. The VM defaults to 4 CPUs, 6 GB RAM, and an 80 GB dynamically allocated disk.
 
-### 2. Clone the repository in Ubuntu
+### 2. Configure the managed accounts
 
-After installing Ubuntu, open Terminal and clone the repository using the command above. This uses the VM's normal outbound NAT connection and does not require a VirtualBox shared folder.
+Create the first Ubuntu account as the instructor administrator. Create a separate `osint-student` standard account, then clone and install the repository from the instructor account using the managed command above. The student must not know the instructor password.
 
 ### 3. Install the workstation
 
 ```bash
 cd ~/clemson-osint-workstation
-chmod +x install.sh bin/* tests/*
-sudo ./install.sh
+sudo ./install.sh --student-user osint-student --age-recipient 'age1...'
 ```
 
-The installer is safe to run again. It logs package names and versions, never credentials. It may take 20-45 minutes depending on the connection and whether QGIS is already cached.
+The installer is safe to run again with the same managed student and recipient. It records package versions and the audit public-key fingerprint, never credentials. It may take 20-45 minutes.
 
 Log out and back in once. Open **OSINT Launchpad** from the application menu, or run:
 
@@ -81,7 +85,7 @@ osint-case verify <case-id>
 osint-case close <case-id>
 ```
 
-Cases live under `~/Cases`. `close` creates a ZIP in the case's `exports` folder and writes a SHA-256 checksum next to it. See [Student Runbook](docs/STUDENT-RUNBOOK.md) for the complete workflow.
+Cases live under `~/Cases`. Every case action extends a hash chain and receives a receipt signed by a root-owned workstation key. `close` creates an age-encrypted `.zip.age` submission package and checksum; only the instructor's separate private key can decrypt it. See [Student Runbook](docs/STUDENT-RUNBOOK.md) and [Audit and Governance](docs/AUDIT-AND-GOVERNANCE.md).
 
 ## Security model in one minute
 
@@ -89,21 +93,22 @@ Cases live under `~/Cases`. `close` creates a ZIP in the case's `exports` folder
 |---|---|---|
 | Endpoint isolation | Keeps research activity in a disposable VM; disables shared clipboard, drag/drop, and shared folders | It cannot make an infected VM safe forever; restore a known-good snapshot after risky work |
 | Network exposure | Uses VirtualBox NAT and a guest firewall denying unsolicited inbound traffic | NAT does not hide the host's public IP from websites |
-| Traffic privacy | Includes Tor Browser Launcher for appropriate passive browsing | Tor is not a universal anonymity switch; logging into identifying accounts defeats separation |
-| Identity separation | Provides a written profile plan and discourages cross-contamination | It does not create accounts, personas, phone numbers, or false identities |
-| Evidence integrity | Records UTC timestamps, source URLs, hashes, tool versions, and packaged case exports | A hash proves file consistency, not that a claim is true or collection was lawful |
+| Attribution | Omits Tor, VPN, proxy, active-scanning, and bulk-profile tools; locks browser proxy/private-mode settings | A local VM cannot defeat every web proxy; institutional egress controls require separate Clemson approval |
+| Identity safety | Disables browser sync, saved passwords, private browsing, extensions, custom proxy settings, and encrypted DNS bypass | It does not create accounts, personas, phone numbers, or false identities |
+| Evidence integrity | Hash-chains case events, obtains root-protected signed receipts, records kernel audit events, and encrypts submissions | Audit metadata proves workstation events, not that a claim is true or collection was lawful |
 
-Read [Safety and Identity](docs/SAFETY-AND-IDENTITY.md) before using Tor, alternate accounts, or sensitive personal data.
+Read [Safety and Identity](docs/SAFETY-AND-IDENTITY.md) and [Audit and Governance](docs/AUDIT-AND-GOVERNANCE.md) before handling accounts or sensitive personal data.
 
 ## Instructor workflow
 
-1. Build one VM, install this kit, run `osint-doctor`, and complete the validation lab.
+1. Build one VM with separate instructor and student accounts, install this kit, run `osint-doctor`, and complete the validation lab.
 2. Shut down the VM and take a VirtualBox snapshot named `clean-installed`.
 3. Export an appliance only if Clemson policy permits distribution and you have removed student data, browser history, credentials, SSH keys, and unique identifiers.
-4. Have each student create their own OS user password on first use. Never distribute a shared credential.
-5. Refresh or rebuild each semester; public sources and OSINT tools change frequently.
+4. Keep the instructor credential and age private key outside the student VM. Give each student a unique standard-user password and never distribute a shared credential.
+5. Register the student, install-manifest digest, audit public-key fingerprint, VM snapshot, and retention date before use.
+6. Refresh or rebuild each semester; public sources and OSINT tools change frequently.
 
-See [Instructor Guide](docs/INSTRUCTOR-GUIDE.md), [Tool Catalog](docs/TOOL-CATALOG.md), and [Maintenance](docs/MAINTENANCE.md). Repository checks run automatically on Linux and Windows for every pull request.
+See [Instructor Guide](docs/INSTRUCTOR-GUIDE.md), [Audit and Governance](docs/AUDIT-AND-GOVERNANCE.md), [Tool Catalog](docs/TOOL-CATALOG.md), and [Maintenance](docs/MAINTENANCE.md). Repository checks run automatically on Linux and Windows for every pull request.
 
 ## Why Ubuntu 24.04 rather than Kasm as the default
 

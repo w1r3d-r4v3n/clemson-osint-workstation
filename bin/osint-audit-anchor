@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""Root-owned append-only receipt signer for managed classroom cases."""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import json
+import os
+import pwd
+import subprocess
+import tempfile
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+STATE_ROOT = Path("/var/lib/clemson-osint/audit")
+LOG_ROOT = Path("/var/log/clemson-osint")
+PRIVATE_KEY = Path("/var/lib/clemson-osint/audit-private.pem")
+PUBLIC_KEY = Path("/opt/clemson-osint/audit-public.pem")
+OPENSSL = Path("/usr/bin/openssl")
+
+
+def canonical(value: object) -> bytes:
+    return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def verify_chain(path: Path) -> tuple[dict[str, object], str]:
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("audit.jsonl must be a regular file")
+    previous = "0" * 64
+    last: dict[str, object] | None = None
+    with path.open(encoding="utf-8") as handle:
+        for expected, line in enumerate(handle, start=1):
+            record = json.loads(line)
+            claimed = str(record.pop("event_hash", ""))
+            if record.get("seq") != expected or record.get("previous_hash") != previous:
+                raise ValueError("audit sequence or previous hash is invalid")
+            actual = hashlib.sha256(canonical(record)).hexdigest()
+            if claimed != actual:
+                raise ValueError("audit event hash is invalid")
+            record["event_hash"] = claimed
+            previous = claimed
+            last = record
+    if last is None:
+        raise ValueError("audit log is empty")
+    return last, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def safe_write(path: Path, data: bytes, uid: int, gid: int) -> None:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(path, flags, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb", closefd=False) as handle:
+            handle.write(data)
+            handle.flush()
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    os.chown(path, uid, gid)
+
+
+def sign(data: bytes) -> bytes:
+    with tempfile.TemporaryDirectory(prefix="clemson-osint-anchor-") as temporary:
+        source = Path(temporary) / "receipt.json"
+        signature = Path(temporary) / "receipt.sig"
+        source.write_bytes(data)
+        subprocess.run(
+            [str(OPENSSL), "pkeyutl", "-sign", "-rawin", "-inkey", str(PRIVATE_KEY), "-in", str(source), "-out", str(signature)],
+            check=True,
+            capture_output=True,
+        )
+        return signature.read_bytes()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Anchor the newest classroom case event")
+    parser.add_argument("case")
+    args = parser.parse_args()
+
+    if os.geteuid() != 0:
+        raise SystemExit("run through the managed sudo rule")
+    student = os.environ.get("SUDO_USER", "")
+    if not student or student == "root":
+        raise SystemExit("SUDO_USER must identify the managed student")
+    account = pwd.getpwnam(student)
+    cases_root = (Path(account.pw_dir) / "Cases").resolve()
+    case = Path(args.case).resolve(strict=True)
+    if not case.is_relative_to(cases_root) or case == cases_root:
+        raise SystemExit("case must be a child of the managed student's Cases directory")
+
+    metadata = json.loads((case / "case.json").read_text(encoding="utf-8"))
+    case_id = str(uuid.UUID(str(metadata["case_id"])))
+    last, audit_digest = verify_chain(case / "audit.jsonl")
+    seq = int(last["seq"])
+    head = str(last["event_hash"])
+
+    STATE_ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
+    LOG_ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
+    state_path = STATE_ROOT / f"{case_id}.json"
+    prior: dict[str, object] | None = None
+    if state_path.exists():
+        prior = json.loads(state_path.read_text(encoding="utf-8"))
+        prior_seq = int(prior["seq"])
+        if seq == prior_seq and head == prior["audit_head"]:
+            receipt = dict(prior["receipt"])
+            signature = base64.b64decode(str(prior["signature_b64"]))
+        elif seq == prior_seq + 1 and last["previous_hash"] == prior["audit_head"]:
+            receipt = {}
+            signature = b""
+        else:
+            raise SystemExit("audit history diverges from the root-owned anchor state")
+    elif seq != 1:
+        raise SystemExit("the first anchored event must have sequence 1")
+    else:
+        receipt = {}
+        signature = b""
+
+    if not receipt:
+        public_digest = hashlib.sha256(PUBLIC_KEY.read_bytes()).hexdigest()
+        receipt = {
+            "schema_version": 1,
+            "case_id": case_id,
+            "student": student,
+            "seq": seq,
+            "audit_head": head,
+            "audit_sha256": audit_digest,
+            "anchored_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "public_key_sha256": public_digest,
+        }
+        signature = sign(canonical(receipt))
+        state = {"seq": seq, "audit_head": head, "receipt": receipt, "signature_b64": base64.b64encode(signature).decode()}
+        temporary = state_path.with_suffix(".tmp")
+        temporary.write_bytes(canonical(state))
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, state_path)
+        with (LOG_ROOT / "anchors.jsonl").open("ab") as handle:
+            handle.write(canonical({"receipt": receipt, "signature_b64": base64.b64encode(signature).decode()}))
+            handle.flush()
+            os.fsync(handle.fileno())
+
+    receipts = case / "receipts"
+    if receipts.is_symlink() or not receipts.is_dir():
+        raise SystemExit("receipts must be a regular directory")
+    receipt_path = receipts / f"{seq:06d}.receipt.json"
+    signature_path = receipts / f"{seq:06d}.receipt.sig"
+    for output in (receipt_path, signature_path):
+        if output.exists() or output.is_symlink():
+            output.unlink()
+    safe_write(receipt_path, canonical(receipt), account.pw_uid, account.pw_gid)
+    safe_write(signature_path, signature, account.pw_uid, account.pw_gid)
+
+    case_key = case / "audit-public.pem"
+    if not case_key.exists():
+        safe_write(case_key, PUBLIC_KEY.read_bytes(), account.pw_uid, account.pw_gid)
+    print(f"Anchored case {case_id} event {seq}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

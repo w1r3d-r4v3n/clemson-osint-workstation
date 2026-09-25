@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Verify a case hash chain and every signed classroom receipt."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import subprocess
+import tempfile
+from pathlib import Path
+
+
+def canonical(value: object) -> bytes:
+    return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Verify an anchored Clemson OSINT case")
+    parser.add_argument("case", type=Path)
+    args = parser.parse_args()
+    case = args.case.resolve(strict=True)
+    public_key = case / "audit-public.pem"
+    previous = "0" * 64
+    events: list[dict[str, object]] = []
+    prefix_hash = hashlib.sha256()
+    prefix_digests: list[str] = []
+    with (case / "audit.jsonl").open("rb") as handle:
+        for expected, raw_line in enumerate(handle, start=1):
+            prefix_hash.update(raw_line)
+            prefix_digests.append(prefix_hash.hexdigest())
+            event = json.loads(raw_line)
+            claimed = str(event.pop("event_hash", ""))
+            if event.get("seq") != expected or event.get("previous_hash") != previous:
+                raise SystemExit(f"invalid audit sequence at event {expected}")
+            actual = hashlib.sha256(canonical(event)).hexdigest()
+            if claimed != actual:
+                raise SystemExit(f"invalid audit hash at event {expected}")
+            event["event_hash"] = claimed
+            events.append(event)
+            previous = claimed
+    if not events:
+        raise SystemExit("audit log is empty")
+
+    receipts = case / "receipts"
+    for event in events:
+        seq = int(event["seq"])
+        receipt_path = receipts / f"{seq:06d}.receipt.json"
+        signature_path = receipts / f"{seq:06d}.receipt.sig"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        if (
+            receipt.get("seq") != seq
+            or receipt.get("audit_head") != event["event_hash"]
+            or receipt.get("audit_sha256") != prefix_digests[seq - 1]
+            or receipt.get("case_id") != event["case_id"]
+        ):
+            raise SystemExit(f"receipt {seq} does not match its event")
+        if receipt.get("public_key_sha256") != hashlib.sha256(public_key.read_bytes()).hexdigest():
+            raise SystemExit(f"receipt {seq} names a different public key")
+        with tempfile.NamedTemporaryFile() as canonical_receipt:
+            canonical_receipt.write(canonical(receipt))
+            canonical_receipt.flush()
+            result = subprocess.run(
+                ["openssl", "pkeyutl", "-verify", "-pubin", "-inkey", str(public_key), "-rawin", "-in", canonical_receipt.name, "-sigfile", str(signature_path)],
+                capture_output=True,
+            )
+        if result.returncode != 0:
+            raise SystemExit(f"receipt signature {seq} is invalid")
+    print(f"Verified {len(events)} anchored event(s); head {previous}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

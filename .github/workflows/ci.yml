@@ -15,25 +15,28 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate shell syntax
-        run: bash -n install.sh bin/osint-doctor bin/osint-portal
+        run: bash -n install.sh bin/osint-doctor bin/osint-portal tests/test_managed_audit.sh
 
       - name: Validate Python and JSON
         run: |
-          python3 -m py_compile bin/osint-case tests/test_case_workflow.py tests/test_portal.py
+          python3 -m py_compile bin/osint-case bin/osint-audit-anchor bin/osint-audit-verify tests/test_case_workflow.py tests/test_portal.py tests/test_security_controls.py
           python3 -m json.tool firefox-policies.json >/dev/null
 
       - name: Run tests
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+
+      - name: Exercise managed audit receipts as root
+        run: sudo --preserve-env=CI bash tests/test_managed_audit.sh
 
   windows:
     name: PowerShell syntax
     runs-on: windows-2025
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Parse PowerShell scripts
         shell: pwsh

@@ -18,6 +18,16 @@ class CaseWorkflowTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name) / "Cases"
+        self.recipient = Path(self.temp.name) / "recipient.txt"
+        self.recipient.write_text("age1testrecipient000000000000000000000000000000000000000000000000000\n", encoding="utf-8")
+        self.fake_age = Path(self.temp.name) / "fake_age.py"
+        self.fake_age.write_text(
+            "import shutil, sys\n"
+            "args = sys.argv[1:]\n"
+            "output = args[args.index('--output') + 1]\n"
+            "shutil.copyfile(args[-1], output)\n",
+            encoding="utf-8",
+        )
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -28,6 +38,12 @@ class CaseWorkflowTest(unittest.TestCase):
             text=True,
             capture_output=True,
             check=check,
+            env={
+                **os.environ,
+                "OSINT_AGE_RECIPIENT_FILE": str(self.recipient),
+                "OSINT_AGE_COMMAND": f"{Path(sys.executable).as_posix()} {self.fake_age.as_posix()}",
+                "OSINT_MANAGED_MARKER": str(Path(self.temp.name) / "not-managed"),
+            },
         )
 
     def case_dir(self) -> Path:
@@ -52,8 +68,10 @@ class CaseWorkflowTest(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(len(rows[0]["sha256"]), 64)
         self.assertEqual(json.loads((case / "case.json").read_text())["status"], "closed")
-        self.assertEqual(len(list((case / "exports").glob("*.zip"))), 1)
+        self.assertEqual(len(list((case / "exports").glob("*.zip.age"))), 1)
         self.assertEqual(len(list((case / "exports").glob("*.sha256"))), 1)
+        self.assertEqual(len((case / "audit.jsonl").read_text(encoding="utf-8").splitlines()), 6)
+        self.assertEqual(len(list((case / "exports").glob(".*.zip"))), 0)
 
     def test_rejects_non_web_source(self) -> None:
         self.run_case("new", "URL validation")
@@ -61,6 +79,16 @@ class CaseWorkflowTest(unittest.TestCase):
         result = self.run_case("source", case_ref, "file:///etc/passwd", check=False)
         self.assertEqual(result.returncode, 2)
         self.assertIn("http:// or https://", result.stderr)
+
+    def test_detects_audit_chain_tampering(self) -> None:
+        self.run_case("new", "Audit integrity")
+        case = self.case_dir()
+        audit = case / "audit.jsonl"
+        audit.write_text(audit.read_text(encoding="utf-8").replace("case-created", "case-erased"), encoding="utf-8")
+        case_ref = json.loads((case / "case.json").read_text())['case_id'][:8]
+        result = self.run_case("source", case_ref, "https://example.org/", check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("audit hash is invalid", result.stderr)
 
 
 if __name__ == "__main__":

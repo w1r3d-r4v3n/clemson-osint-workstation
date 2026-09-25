@@ -11,11 +11,13 @@ Contributions that improve reproducibility, accessibility, source quality, stude
 5. Run the checks below.
 
 ```bash
-bash -n install.sh bin/osint-doctor bin/osint-portal
-python3 -m py_compile bin/osint-case tests/test_case_workflow.py tests/test_portal.py
+bash -n install.sh bin/osint-doctor bin/osint-portal tests/test_managed_audit.sh
+python3 -m py_compile bin/osint-case bin/osint-audit-anchor bin/osint-audit-verify tests/test_case_workflow.py tests/test_portal.py tests/test_security_controls.py
 python3 -m json.tool firefox-policies.json >/dev/null
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
+
+The Linux CI runner also executes `tests/test_managed_audit.sh` as root in its disposable VM. Do not run that account-creating integration test on a workstation.
 
 Windows contributors should also parse both scripts under `windows/` with PowerShell or allow CI to do so.
 
