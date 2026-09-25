@@ -29,7 +29,7 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
 
       - name: Exercise managed audit receipts as root
-        run: sudo --preserve-env=CI bash tests/test_managed_audit.sh
+        run: sudo env CI=true bash -x tests/test_managed_audit.sh
 
   windows:
     name: PowerShell syntax
