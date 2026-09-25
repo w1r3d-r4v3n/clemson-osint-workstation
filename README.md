@@ -1,5 +1,7 @@
 # Clemson OSINT Club Workstation
 
+![An ethical OSINT research workspace connecting maps, public records, imagery, metadata, and evidence verification](assets/readme-banner.png)
+
 An unofficial, no-cost, student-ready OSINT workstation kit for a dedicated Ubuntu 24.04 LTS virtual machine. It provides a research launchpad, case and evidence workflow, local analysis tools, privacy guardrails, and a reproducible installer.
 
 This kit is for lawful research of public information. It is not a license to bypass access controls, misrepresent identity, harass people, scan systems without authorization, or publish sensitive personal data.
