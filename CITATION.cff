@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: If you use this workstation in teaching or research, cite the tagged release and commit.
+title: Clemson OSINT Club Workstation
+type: software
+version: 1.0.0
+date-released: 2026-09-24
+authors:
+  - name: Clemson OSINT Club contributors
+license: MIT
+repository-code: https://github.com/w1r3d-r4v3n/clemson-osint-workstation

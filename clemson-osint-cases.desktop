@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=OSINT Cases
+Comment=Open the private local case folder
+Exec=xdg-open %h/Cases
+Icon=folder-documents
+Terminal=false
+Categories=Utility;Education;

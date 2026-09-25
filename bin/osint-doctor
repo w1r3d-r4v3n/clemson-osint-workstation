@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+failures=0
+warnings=0
+
+pass() { printf 'PASS  %s\n' "$1"; }
+fail() { printf 'FAIL  %s\n' "$1"; failures=$((failures + 1)); }
+warn() { printf 'WARN  %s\n' "$1"; warnings=$((warnings + 1)); }
+
+required=(python3 exiftool ffmpeg ffprobe convert identify mediainfo pdfinfo jq sqlite3 dig whois nmap qgis libreoffice keepassxc osint-case)
+optional=(sherlock maigret yt-dlp gallery-dl instaloader torbrowser-launcher)
+
+echo "Clemson OSINT Workstation health check"
+echo
+for command in "${required[@]}"; do
+  if command -v "${command}" >/dev/null 2>&1; then pass "${command}"; else fail "${command} not found"; fi
+done
+for command in "${optional[@]}"; do
+  if command -v "${command}" >/dev/null 2>&1; then pass "${command}"; else warn "${command} not found (log out/in after pipx install)"; fi
+done
+
+if [[ -r /opt/clemson-osint/VERSION ]]; then
+  pass "kit version $(tr -d '\r\n' < /opt/clemson-osint/VERSION)"
+else
+  fail "kit version file missing"
+fi
+
+if [[ -d "${HOME}/Cases" ]]; then
+  mode="$(stat -c '%a' "${HOME}/Cases" 2>/dev/null || true)"
+  if [[ "${mode}" == "700" ]]; then pass "case folder permissions are 700"; else warn "case folder mode is ${mode:-unknown}; expected 700"; fi
+else
+  fail "${HOME}/Cases is missing"
+fi
+
+if command -v ufw >/dev/null 2>&1 && sudo -n ufw status 2>/dev/null | grep -q '^Status: active'; then
+  pass "guest firewall active"
+else
+  warn "could not confirm active guest firewall without sudo"
+fi
+
+echo
+printf 'Result: %d failure(s), %d warning(s).\n' "${failures}" "${warnings}"
+[[ "${failures}" -eq 0 ]]

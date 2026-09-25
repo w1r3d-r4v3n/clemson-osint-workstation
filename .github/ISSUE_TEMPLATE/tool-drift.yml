@@ -1,0 +1,24 @@
+name: Tool or source drift
+description: Report an upstream package, command, public source, or link that changed
+title: "[Drift]: "
+labels: [maintenance]
+body:
+  - type: input
+    id: item
+    attributes:
+      label: Tool, package, command, or public source
+    validations:
+      required: true
+  - type: input
+    id: official
+    attributes:
+      label: Official upstream reference
+      description: Link to primary documentation or a release notice.
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: What changed and how you verified it
+    validations:
+      required: true

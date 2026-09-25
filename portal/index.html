@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Clemson OSINT Club Launchpad</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to research tools</a>
+  <header class="hero">
+    <div class="eyebrow">UNOFFICIAL STUDENT CLUB TOOLKIT</div>
+    <h1>OSINT Launchpad</h1>
+    <p>Plan deliberately. Collect minimally. Preserve provenance. Report uncertainty.</p>
+    <div class="guardrail"><strong>Isolation is not anonymity.</strong> This VM uses the same public internet connection unless you deliberately use a separate, lawful traffic path. Never mix identifying accounts with a separated research profile.</div>
+  </header>
+
+  <main id="main">
+    <section aria-labelledby="workflow-title">
+      <h2 id="workflow-title">Start with the workflow</h2>
+      <ol class="workflow">
+        <li><b>Frame</b><span>Question, authority, scope, stopping rule</span></li>
+        <li><b>Plan</b><span>Keywords, identifiers, source classes, risks</span></li>
+        <li><b>Discover</b><span>Broad search; record leads, not conclusions</span></li>
+        <li><b>Verify</b><span>Corroborate identity, date, place, and context</span></li>
+        <li><b>Preserve</b><span>Source URL, UTC time, original file, SHA-256</span></li>
+        <li><b>Analyze</b><span>Separate observations, inference, and gaps</span></li>
+        <li><b>Report</b><span>Cite sources; minimize personal data; peer review</span></li>
+      </ol>
+      <div class="command-card">
+        <code>osint-case new "Training - verify a public claim"</code>
+        <button type="button" data-copy='osint-case new "Training - verify a public claim"'>Copy</button>
+      </div>
+    </section>
+
+    <section aria-labelledby="tools-title">
+      <div class="section-head">
+        <div>
+          <h2 id="tools-title">Research tools</h2>
+          <p>Free public sources and locally installed utilities. Availability and terms can change.</p>
+        </div>
+        <label class="search">Filter tools <input id="tool-filter" type="search" placeholder="domain, maps, images…" autocomplete="off"></label>
+      </div>
+
+      <div id="tool-grid" class="tool-grid">
+        <article class="tool-card" data-search="search discovery web archives cache historical">
+          <h3>Search & archives</h3>
+          <ul>
+            <li><a href="https://www.google.com/advanced_search" target="_blank" rel="noopener noreferrer">Google Advanced Search</a><span>Operators and bounded web discovery</span></li>
+            <li><a href="https://search.brave.com/" target="_blank" rel="noopener noreferrer">Brave Search</a><span>Independent alternative index</span></li>
+            <li><a href="https://web.archive.org/" target="_blank" rel="noopener noreferrer">Internet Archive Wayback Machine</a><span>Historical pages and saved captures</span></li>
+            <li><a href="https://index.commoncrawl.org/" target="_blank" rel="noopener noreferrer">Common Crawl Index</a><span>Open web crawl indexes</span></li>
+          </ul>
+        </article>
+
+        <article class="tool-card" data-search="domains dns certificates whois infrastructure ip web security">
+          <h3>Domains & infrastructure</h3>
+          <ul>
+            <li><a href="https://lookup.icann.org/" target="_blank" rel="noopener noreferrer">ICANN Lookup</a><span>Registration data under current policy</span></li>
+            <li><a href="https://crt.sh/" target="_blank" rel="noopener noreferrer">crt.sh</a><span>Certificate Transparency search</span></li>
+            <li><a href="https://urlscan.io/" target="_blank" rel="noopener noreferrer">urlscan.io</a><span>Public website scan records; check visibility before submitting</span></li>
+            <li><code>dig example.org any</code><span>Local DNS query</span></li>
+            <li><code>whois example.org</code><span>Local WHOIS client</span></li>
+          </ul>
+        </article>
+
+        <article class="tool-card" data-search="people usernames social media identity account profiles">
+          <h3>Usernames & public profiles</h3>
+          <ul>
+            <li><a href="https://whatsmyname.app/" target="_blank" rel="noopener noreferrer">WhatsMyName</a><span>Username checks across public sites</span></li>
+            <li><code>sherlock USERNAME --folderoutput .</code><span>Local username discovery</span></li>
+            <li><code>maigret USERNAME --html</code><span>Local profile search and report</span></li>
+            <li><a href="https://github.com/search" target="_blank" rel="noopener noreferrer">GitHub Search</a><span>Public code, users, issues, and commits</span></li>
+          </ul>
+          <p class="caution">A matching username is a lead, not proof of identity. Corroborate independently.</p>
+        </article>
+
+        <article class="tool-card" data-search="images video media reverse search metadata exif geolocation frames">
+          <h3>Images & video</h3>
+          <ul>
+            <li><a href="https://lens.google.com/" target="_blank" rel="noopener noreferrer">Google Lens</a><span>Reverse and visual search</span></li>
+            <li><a href="https://www.bing.com/visualsearch" target="_blank" rel="noopener noreferrer">Bing Visual Search</a><span>Alternative visual index</span></li>
+            <li><a href="https://tineye.com/" target="_blank" rel="noopener noreferrer">TinEye</a><span>Image matches and chronology clues</span></li>
+            <li><code>exiftool -a -G1 -s FILE</code><span>Read embedded metadata locally</span></li>
+            <li><code>ffmpeg -i VIDEO -vf fps=1/5 frames/%04d.jpg</code><span>Extract a frame every five seconds</span></li>
+          </ul>
+        </article>
+
+        <article class="tool-card" data-search="maps satellite geospatial coordinates location street map imagery">
+          <h3>Maps & geolocation</h3>
+          <ul>
+            <li><a href="https://www.openstreetmap.org/" target="_blank" rel="noopener noreferrer">OpenStreetMap</a><span>Open map data and object history</span></li>
+            <li><a href="https://livingatlas.arcgis.com/wayback/" target="_blank" rel="noopener noreferrer">World Imagery Wayback</a><span>Historical Esri basemap releases</span></li>
+            <li><a href="https://browser.dataspace.copernicus.eu/" target="_blank" rel="noopener noreferrer">Copernicus Browser</a><span>Sentinel earth-observation imagery</span></li>
+            <li><code>qgis</code><span>Local geospatial analysis</span></li>
+          </ul>
+        </article>
+
+        <article class="tool-card" data-search="companies business corporate securities government filings sanctions nonprofit">
+          <h3>Organizations & records</h3>
+          <ul>
+            <li><a href="https://www.sec.gov/edgar/search/" target="_blank" rel="noopener noreferrer">SEC EDGAR</a><span>US public-company filings</span></li>
+            <li><a href="https://sam.gov/search/" target="_blank" rel="noopener noreferrer">SAM.gov Search</a><span>US entity and contract records</span></li>
+            <li><a href="https://www.gleif.org/en/lei-search" target="_blank" rel="noopener noreferrer">GLEIF LEI Search</a><span>Legal Entity Identifiers and relationships</span></li>
+            <li><a href="https://opencorporates.com/" target="_blank" rel="noopener noreferrer">OpenCorporates</a><span>Aggregated corporate registry leads</span></li>
+            <li><a href="https://apps.irs.gov/app/eos/" target="_blank" rel="noopener noreferrer">IRS Tax Exempt Organization Search</a><span>US nonprofit filings and status</span></li>
+          </ul>
+        </article>
+
+        <article class="tool-card" data-search="documents pdf files metadata analyze extract text hash">
+          <h3>Documents & files</h3>
+          <ul>
+            <li><code>file FILE &amp;&amp; sha256sum FILE</code><span>Identify and hash before analysis</span></li>
+            <li><code>pdfinfo FILE.pdf</code><span>Inspect PDF properties locally</span></li>
+            <li><code>pdftotext -layout FILE.pdf -</code><span>Extract PDF text without uploading</span></li>
+            <li><code>mediainfo FILE</code><span>Inspect audio/video container metadata</span></li>
+            <li><code>libreoffice</code><span>Read and create local reports</span></li>
+          </ul>
+        </article>
+
+        <article class="tool-card" data-search="preservation evidence archive download video images case hash report">
+          <h3>Preservation & reporting</h3>
+          <ul>
+            <li><code>osint-case source CASE URL</code><span>Log URL and UTC access time</span></li>
+            <li><code>osint-case ingest CASE FILE --source URL</code><span>Copy and SHA-256 an original</span></li>
+            <li><code>yt-dlp --write-info-json --write-thumbnail URL</code><span>Preserve permitted public media plus metadata</span></li>
+            <li><code>osint-case verify CASE</code><span>Check evidence against the manifest</span></li>
+            <li><code>osint-case close CASE</code><span>Create a reviewable ZIP and checksum</span></li>
+          </ul>
+        </article>
+      </div>
+      <p id="empty-state" hidden>No tool cards match that filter.</p>
+    </section>
+
+    <section class="decision" aria-labelledby="decision-title">
+      <h2 id="decision-title">Before opening a sensitive source</h2>
+      <div class="decision-grid">
+        <div><strong>1. Is access lawful?</strong><span>Publicly reachable is not the same as authorized reuse. Stop at login walls, paywalls, and technical controls.</span></div>
+        <div><strong>2. Is collection necessary?</strong><span>Gather only what answers the scoped question. Do not build gratuitous dossiers.</span></div>
+        <div><strong>3. Could you expose a person?</strong><span>Minimize personal data, redact reports, and escalate credible safety concerns to the instructor.</span></div>
+        <div><strong>4. What identity is in use?</strong><span>Do not sign in to personal or Clemson accounts from a separated research profile.</span></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Unofficial Clemson OSINT Club workstation · No university marks · Core workflow requires no paid services</p>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>

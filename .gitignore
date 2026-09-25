@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.zip
+*.ova
+*.ovf
+*.vdi
+*.vmdk
+*.iso
+Cases/

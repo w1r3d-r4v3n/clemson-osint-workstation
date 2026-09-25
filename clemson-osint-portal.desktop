@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=OSINT Launchpad
+Comment=Open the Clemson OSINT Club research workflow
+Exec=osint-portal
+Icon=applications-internet
+Terminal=false
+Categories=Network;Education;

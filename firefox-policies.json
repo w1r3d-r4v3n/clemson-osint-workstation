@@ -1,0 +1,18 @@
+{
+  "policies": {
+    "DisableFirefoxStudies": true,
+    "DisableTelemetry": true,
+    "DisablePocket": true,
+    "OfferToSaveLogins": false,
+    "EnableTrackingProtection": {
+      "Value": true,
+      "Locked": false,
+      "Cryptomining": true,
+      "Fingerprinting": true
+    },
+    "Preferences": {
+      "browser.formfill.enable": { "Value": false, "Status": "default" },
+      "privacy.globalprivacycontrol.enabled": { "Value": true, "Status": "default" }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+PORTAL=/opt/clemson-osint/portal/index.html
+if [[ ! -f "${PORTAL}" ]]; then
+  echo "OSINT portal is not installed at ${PORTAL}." >&2
+  exit 1
+fi
+exec xdg-open "file://${PORTAL}"

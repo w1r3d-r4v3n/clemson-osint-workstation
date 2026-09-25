@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+"""Small, dependency-free case and evidence manager for classroom OSINT."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import getpass
+import hashlib
+import json
+import os
+import re
+import shutil
+import stat
+import sys
+import uuid
+import zipfile
+from datetime import datetime, timezone
+from pathlib import Path
+from urllib.parse import urlparse
+
+
+ROOT = Path(os.environ.get("OSINT_CASES_DIR", Path.home() / "Cases")).expanduser()
+SOURCE_FIELDS = ["source_id", "accessed_utc", "url", "title", "category", "notes"]
+EVIDENCE_FIELDS = [
+    "evidence_id",
+    "ingested_utc",
+    "relative_path",
+    "sha256",
+    "bytes",
+    "source_url",
+    "notes",
+]
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug[:48] or "case"
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def safe_url(value: str) -> str:
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("source URLs must be absolute http:// or https:// URLs")
+    return value
+
+
+def write_csv_header(path: Path, fields: list[str]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        csv.DictWriter(handle, fieldnames=fields).writeheader()
+
+
+def append_csv(path: Path, fields: list[str], row: dict[str, object]) -> None:
+    with path.open("a", newline="", encoding="utf-8") as handle:
+        csv.DictWriter(handle, fieldnames=fields).writerow(row)
+
+
+def read_metadata(case: Path) -> dict[str, object]:
+    return json.loads((case / "case.json").read_text(encoding="utf-8"))
+
+
+def resolve_case(reference: str) -> Path:
+    candidate = Path(reference).expanduser()
+    if candidate.is_dir() and (candidate / "case.json").is_file():
+        return candidate.resolve()
+    if not ROOT.exists():
+        raise ValueError("no cases exist yet; run 'osint-case new TITLE'")
+    matches = []
+    for path in ROOT.iterdir():
+        if not path.is_dir() or not (path / "case.json").is_file():
+            continue
+        metadata = read_metadata(path)
+        if path.name == reference or str(metadata.get("case_id", "")).startswith(reference):
+            matches.append(path)
+    if not matches:
+        raise ValueError(f"case not found: {reference}")
+    if len(matches) > 1:
+        raise ValueError(f"case reference is ambiguous: {reference}")
+    return matches[0]
+
+
+def cmd_new(args: argparse.Namespace) -> None:
+    ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(ROOT, 0o700)
+    case_id = str(uuid.uuid4())
+    date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    case = ROOT / f"{date}_{slugify(args.title)}_{case_id[:8]}"
+    case.mkdir(mode=0o700)
+    for name in ("evidence", "captures", "notes", "reports", "exports"):
+        (case / name).mkdir(mode=0o700)
+    metadata = {
+        "schema_version": 1,
+        "case_id": case_id,
+        "title": args.title,
+        "created_utc": utc_now(),
+        "owner": getpass.getuser(),
+        "status": "open",
+        "purpose": args.purpose or "",
+    }
+    (case / "case.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    write_csv_header(case / "sources.csv", SOURCE_FIELDS)
+    write_csv_header(case / "evidence_manifest.csv", EVIDENCE_FIELDS)
+    (case / "README.md").write_text(
+        f"# {args.title}\n\n"
+        f"- Case ID: `{case_id}`\n"
+        f"- Created: {metadata['created_utc']}\n"
+        f"- Status: open\n"
+        f"- Purpose: {metadata['purpose'] or '[state the research question and authorization]'}\n\n"
+        "## Scope and constraints\n\n"
+        "[Define what is in scope, what is out of scope, and the stopping rule.]\n\n"
+        "## Findings\n\n"
+        "Separate observed facts from inference. Cite source IDs from `sources.csv`.\n\n"
+        "## Gaps and alternative explanations\n\n"
+        "[Record disconfirming evidence, uncertainty, and next steps.]\n",
+        encoding="utf-8",
+    )
+    print(f"Created case {case_id}")
+    print(case)
+
+
+def cmd_list(_args: argparse.Namespace) -> None:
+    if not ROOT.exists():
+        print("No cases yet.")
+        return
+    rows = []
+    for case in sorted(ROOT.iterdir(), reverse=True):
+        if (case / "case.json").is_file():
+            meta = read_metadata(case)
+            rows.append((str(meta["case_id"])[:8], str(meta["status"]), str(meta["created_utc"]), str(meta["title"])))
+    if not rows:
+        print("No cases yet.")
+        return
+    print(f"{'ID':8}  {'STATUS':8}  {'CREATED (UTC)':20}  TITLE")
+    for row in rows:
+        print(f"{row[0]:8}  {row[1]:8}  {row[2]:20}  {row[3]}")
+
+
+def cmd_source(args: argparse.Namespace) -> None:
+    case = resolve_case(args.case)
+    url = safe_url(args.url)
+    source_id = str(uuid.uuid4())
+    append_csv(
+        case / "sources.csv",
+        SOURCE_FIELDS,
+        {
+            "source_id": source_id,
+            "accessed_utc": utc_now(),
+            "url": url,
+            "title": args.title or "",
+            "category": args.category or "web",
+            "notes": args.notes or "",
+        },
+    )
+    print(f"Logged source {source_id}")
+
+
+def destination_for(case: Path, source: Path) -> Path:
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", source.name).strip("._") or "evidence"
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    destination = case / "evidence" / f"{stamp}_{safe_name}"
+    counter = 1
+    while destination.exists():
+        destination = case / "evidence" / f"{stamp}_{counter}_{safe_name}"
+        counter += 1
+    return destination
+
+
+def ingest_one(case: Path, source: Path, source_url: str, notes: str) -> None:
+    if source.is_symlink() or not source.is_file():
+        raise ValueError(f"only regular files can be ingested: {source}")
+    destination = destination_for(case, source)
+    shutil.copy2(source, destination)
+    destination.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    digest = sha256(destination)
+    evidence_id = str(uuid.uuid4())
+    append_csv(
+        case / "evidence_manifest.csv",
+        EVIDENCE_FIELDS,
+        {
+            "evidence_id": evidence_id,
+            "ingested_utc": utc_now(),
+            "relative_path": destination.relative_to(case).as_posix(),
+            "sha256": digest,
+            "bytes": destination.stat().st_size,
+            "source_url": source_url,
+            "notes": notes,
+        },
+    )
+    print(f"{evidence_id[:8]}  {digest}  {destination.name}")
+
+
+def cmd_ingest(args: argparse.Namespace) -> None:
+    case = resolve_case(args.case)
+    source_url = safe_url(args.source) if args.source else ""
+    source = Path(args.path).expanduser().resolve()
+    if not source.exists():
+        raise ValueError(f"path does not exist: {source}")
+    if source.is_dir():
+        files = sorted(path for path in source.rglob("*") if path.is_file() and not path.is_symlink())
+        if not files:
+            raise ValueError("directory contains no regular files")
+        for path in files:
+            ingest_one(case, path, source_url, args.notes or f"Imported from {source.name}")
+    else:
+        ingest_one(case, source, source_url, args.notes or "")
+
+
+def manifest_rows(case: Path) -> list[dict[str, str]]:
+    with (case / "evidence_manifest.csv").open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+def cmd_verify(args: argparse.Namespace) -> None:
+    case = resolve_case(args.case)
+    failures = 0
+    rows = manifest_rows(case)
+    for row in rows:
+        path = case / row["relative_path"]
+        if not path.is_file():
+            print(f"MISSING   {row['relative_path']}")
+            failures += 1
+            continue
+        actual = sha256(path)
+        if actual != row["sha256"]:
+            print(f"MISMATCH  {row['relative_path']}")
+            failures += 1
+        else:
+            print(f"OK        {row['relative_path']}")
+    if not rows:
+        print("No evidence files are registered.")
+    if failures:
+        raise SystemExit(f"Verification failed for {failures} item(s).")
+    print(f"Verification passed: {len(rows)} item(s).")
+
+
+def cmd_close(args: argparse.Namespace) -> None:
+    case = resolve_case(args.case)
+    cmd_verify(argparse.Namespace(case=str(case)))
+    metadata = read_metadata(case)
+    metadata["status"] = "closed"
+    metadata["closed_utc"] = utc_now()
+    (case / "case.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    export = case / "exports" / f"{case.name}.zip"
+    if export.exists() and not args.force:
+        raise ValueError(f"export already exists; use --force to replace it: {export}")
+    if export.exists():
+        export.unlink()
+    with zipfile.ZipFile(export, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        for path in sorted(case.rglob("*")):
+            if not path.is_file() or "exports" in path.relative_to(case).parts:
+                continue
+            archive.write(path, path.relative_to(case.parent))
+    checksum = sha256(export)
+    checksum_path = export.with_suffix(export.suffix + ".sha256")
+    checksum_path.write_text(f"{checksum}  {export.name}\n", encoding="utf-8")
+    print(f"Closed and packaged: {export}")
+    print(f"SHA-256: {checksum}")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Create and preserve classroom OSINT cases")
+    parser.add_argument("--root", help="override the case root directory")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    new = sub.add_parser("new", help="create a case")
+    new.add_argument("title")
+    new.add_argument("--purpose")
+    new.set_defaults(func=cmd_new)
+
+    listing = sub.add_parser("list", help="list cases")
+    listing.set_defaults(func=cmd_list)
+
+    source = sub.add_parser("source", help="log a public source URL")
+    source.add_argument("case")
+    source.add_argument("url")
+    source.add_argument("--title")
+    source.add_argument("--category", default="web")
+    source.add_argument("--notes")
+    source.set_defaults(func=cmd_source)
+
+    ingest = sub.add_parser("ingest", help="copy and hash an evidence file or directory")
+    ingest.add_argument("case")
+    ingest.add_argument("path")
+    ingest.add_argument("--source", help="public source URL")
+    ingest.add_argument("--notes")
+    ingest.set_defaults(func=cmd_ingest)
+
+    verify = sub.add_parser("verify", help="verify registered evidence hashes")
+    verify.add_argument("case")
+    verify.set_defaults(func=cmd_verify)
+
+    close = sub.add_parser("close", help="verify, close, and package a case")
+    close.add_argument("case")
+    close.add_argument("--force", action="store_true")
+    close.set_defaults(func=cmd_close)
+    return parser
+
+
+def main() -> int:
+    global ROOT
+    parser = build_parser()
+    args = parser.parse_args()
+    if args.root:
+        ROOT = Path(args.root).expanduser().resolve()
+    try:
+        args.func(args)
+        return 0
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
